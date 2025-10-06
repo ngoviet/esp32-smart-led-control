@@ -1,0 +1,25 @@
+# ===============================================
+# WIFI BASIC CONFIG - CẤU HÌNH WIFI CƠ BẢN
+# ===============================================
+# Module này chỉ chứa cấu hình WiFi cơ bản
+# Tất cả monitoring đã chuyển sang diagnostic.yaml
+# ===============================================
+
+# WiFi configuration được định nghĩa trong main.yaml với secrets
+# File này có thể để trống hoặc chứa các cấu hình WiFi bổ sung
+
+# Captive Portal (nếu cần fallback khi WiFi lỗi)
+# captive_portal:
+
+# mDNS (Network discovery)
+# mdns:
+#   services:
+#     - service: esphome
+#       protocol: tcp
+#       port: 6053
+
+# WiFi AP mode fallback (khi không kết nối được WiFi chính)
+# wifi:
+#   ap:
+#     ssid: "ESP32 LED Controller Fallback"
+#     password: "fallback123"

@@ -1,0 +1,109 @@
+# ===============================================
+# LED CONTROLS - ĐIỀU KHIỂN ĐÈN LED VÀ NÚT BẤM
+# ===============================================
+
+globals:
+  # Thời gian điều khiển manual LED2 (để auto return)
+  - id: led2_manual_time
+    type: unsigned long
+    initial_value: '0'
+  
+  # Manual override timeout (5 phút = 300000ms)
+  - id: led2_manual_timeout
+    type: unsigned long
+    initial_value: '300000'
+
+switch:
+  - platform: template
+    name: "LED 2 Auto Mode"
+    id: mode_auto_led2
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    icon: "mdi:lightbulb-auto"
+
+  - platform: gpio
+    pin: GPIO12
+    name: "LED 1"
+    id: led_1_switch
+
+  - platform: gpio
+    pin: GPIO13
+    id: led_2_switch
+    internal: true  # GPIO control, không hiển thị trực tiếp
+
+  # LED2 với manual override và auto return
+  - platform: template
+    name: "LED 2"
+    id: led_2_manual
+    icon: "mdi:lightbulb"
+    turn_on_action:
+      - switch.turn_on: led_2_switch
+      - switch.turn_off: mode_auto_led2  # Tắt chế độ auto tạm thời
+      - globals.set:
+          id: led2_manual_time
+          value: !lambda 'return millis();'
+    turn_off_action:
+      - switch.turn_off: led_2_switch
+      - switch.turn_off: mode_auto_led2  # Tắt chế độ auto tạm thời
+      - globals.set:
+          id: led2_manual_time
+          value: !lambda 'return millis();'
+    lambda: |-
+      return id(led_2_switch).state;
+
+# AUTO RETURN LOGIC - Tự động quay về chế độ auto sau khi timeout
+interval:
+  - interval: 30s  # Kiểm tra mỗi 30 giây
+    then:
+      - lambda: |-
+          // Kiểm tra nếu đang trong manual mode và đã timeout
+          if (!id(mode_auto_led2).state && id(led2_manual_time) > 0) {
+            unsigned long current_time = millis();
+            unsigned long elapsed = current_time - id(led2_manual_time);
+            
+            // Nếu đã quá timeout (5 phút) thì tự động quay về auto mode
+            if (elapsed >= id(led2_manual_timeout)) {
+              ESP_LOGI("LED2", "Manual timeout reached, returning to auto mode");
+              id(mode_auto_led2).turn_on();
+              id(led2_manual_time) = 0;
+            }
+          }
+
+
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO14
+      mode: INPUT_PULLUP
+      inverted: true
+    id: button1
+    name: "Nút tay LED 1"
+    on_press:
+      then:
+        - switch.toggle: led_1_switch
+
+  # NÚT CẢM ỨNG LED 2 - MANUAL OVERRIDE
+  - platform: gpio
+    pin:
+      number: GPIO27
+      mode: INPUT
+    id: button2
+    name: "Nút cảm ứng LED 2"
+    filters:
+      - delayed_on: 60ms
+      - delayed_off: 60ms
+    on_click:
+      - min_length: 80ms
+        max_length: 700ms
+        then:
+          # Toggle LED2 và đặt manual override
+          - switch.toggle: led_2_manual
+      - min_length: 800ms
+        max_length: 5s
+        then:
+          # Bấm lâu để trở về chế độ auto
+          - switch.turn_on: mode_auto_led2
+          - globals.set:
+              id: led2_manual_time
+              value: '0'

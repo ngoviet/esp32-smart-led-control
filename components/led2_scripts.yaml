@@ -1,0 +1,46 @@
+# ===========================================
+# CÁC SCRIPT ĐIỀU KHIỂN LED2 - LED2 CONTROL SCRIPTS
+# ===========================================
+
+script:
+  # Script bật LED2 thủ công (5 phút)
+  - id: led2_manual_on
+    mode: restart
+    then:
+      - switch.turn_on: led_2_manual
+      - globals.set:
+          id: led2_manual_time
+          value: !lambda 'return millis();'
+      - logger.log: "LED2 turned ON manually for 5 minutes"
+
+  # Script tắt LED2 thủ công (5 phút)  
+  - id: led2_manual_off
+    mode: restart
+    then:
+      - switch.turn_off: led_2_manual
+      - globals.set:
+          id: led2_manual_time
+          value: !lambda 'return millis();'
+      - logger.log: "LED2 turned OFF manually for 5 minutes"
+
+  # Script toggle LED2 thủ công
+  - id: led2_manual_toggle
+    mode: restart
+    then:
+      - switch.toggle: led_2_manual
+      - globals.set:
+          id: led2_manual_time
+          value: !lambda 'return millis();'
+      - logger.log: "LED2 toggled manually for 5 minutes"
+
+  # Script force về chế độ tự động
+  - id: led2_force_auto
+    mode: restart
+    then:
+      - globals.set:
+          id: led2_manual_time
+          value: '0'
+      - switch.turn_on: mode_auto_led2
+      - logger.log: "LED2 forced to auto mode"
+
+# Chỉ giữ script để hỗ trợ, không cần thêm switch

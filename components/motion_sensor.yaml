@@ -1,0 +1,46 @@
+# ===============================================
+# MOTION SENSOR - CẢM BIẾN CHUYỂN ĐỘNG LD2410
+# ===============================================
+
+uart:
+  id: uart_ld2410
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 256000
+  rx_buffer_size: 512
+
+ld2410:
+  uart_id: uart_ld2410
+  id: mmwave
+
+binary_sensor:
+  - platform: ld2410
+    has_target:
+      name: "Phát hiện người"
+      id: presence_sensor
+      on_press:
+        then:
+          - if:
+              condition:
+                lambda: |-
+                  auto now = id(ha_time).now();
+                  if (!now.is_valid()) now = id(ntp_time).now();
+                  if (!now.is_valid()) return false;
+                  int m = now.hour*60 + now.minute;
+                  bool in_window = (m >= id(start_min)) && (m < id(end_min));
+                  return in_window && id(mode_auto_led2).state;
+              then:
+                - switch.turn_on: led_2_switch
+      on_release:
+        then:
+          - if:
+              condition:
+                lambda: |-
+                  auto now = id(ha_time).now();
+                  if (!now.is_valid()) now = id(ntp_time).now();
+                  if (!now.is_valid()) return false;
+                  int m = now.hour*60 + now.minute;
+                  bool in_window = (m >= id(start_min)) && (m < id(end_min));
+                  return in_window && id(mode_auto_led2).state;
+              then:
+                - switch.turn_off: led_2_switch

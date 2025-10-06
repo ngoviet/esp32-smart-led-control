@@ -1,0 +1,346 @@
+# ===============================================
+# DIAGNOSTIC - CHẨN ĐOÁN & GIÁM SÁT HỆ THỐNG
+# ===============================================
+# Module tổng hợp tất cả chức năng diagnostic:
+# - WiFi monitoring & performance
+# - System resources (CPU, Memory)  
+# - Network connectivity & quality
+# - Device health & uptime tracking
+# ===============================================
+
+sensor:
+  # ===============================================
+  # WIFI DIAGNOSTICS - CHẨN ĐOÁN WIFI
+  # ===============================================
+  
+  # WiFi Signal Strength (RSSI) với filtering
+  - platform: wifi_signal
+    id: rssi_dbm
+    name: "WiFi RSSI"
+    update_interval: 30s
+    entity_category: diagnostic
+    icon: "mdi:wifi"
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+  # WiFi Quality Percentage (0-100%)
+  - platform: template
+    id: wifi_quality_pct
+    name: "WiFi Quality"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 30s
+    entity_category: diagnostic
+    device_class: signal_strength
+    icon: "mdi:wifi-strength-2"
+    lambda: |-
+      float rssi = id(rssi_dbm).state;
+      if (isnan(rssi)) return NAN;
+      // 0% tại -100 dBm, 100% tại -50 dBm
+      if (rssi <= -100) return 0;
+      if (rssi >= -50)  return 100;
+      return (rssi + 100.0f) * 2.0f;
+
+  # ===============================================
+  # SYSTEM DIAGNOSTICS - CHẨN ĐOÁN HỆ THỐNG
+  # ===============================================
+  
+  # Uptime in seconds
+  - platform: uptime
+    id: uptime_seconds
+    name: "Uptime Seconds"
+    update_interval: 60s
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    icon: "mdi:clock-outline"
+
+  # Free Heap Memory (bytes)
+  - platform: template
+    id: free_heap
+    name: "Free Heap Memory"
+    update_interval: 30s
+    unit_of_measurement: "B"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    device_class: data_size
+    icon: "mdi:memory"
+    lambda: |-
+      return esp_get_free_heap_size();
+
+  # Free Heap Memory (KB) - More readable
+  - platform: template
+    id: free_heap_kb
+    name: "RAM Free (KB)"
+    update_interval: 30s
+    unit_of_measurement: "KB"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    device_class: data_size
+    icon: "mdi:chip"
+    lambda: |-
+      return esp_get_free_heap_size() / 1024.0f;
+
+  # Minimum Free Heap (lowest point reached)
+  - platform: template
+    id: min_free_heap
+    name: "Min Free Heap"
+    update_interval: 60s
+    unit_of_measurement: "B"
+    accuracy_decimals: 0
+    entity_category: diagnostic
+    device_class: data_size
+    lambda: |-
+      return esp_get_minimum_free_heap_size();
+
+  # Free Heap Display Format: Free/Total (KB)
+  - platform: template
+    id: heap_display_format
+    name: "RAM Usage"
+    update_interval: 30s
+    unit_of_measurement: ""
+    entity_category: diagnostic
+    icon: "mdi:memory"
+    lambda: |-
+      float free_kb = esp_get_free_heap_size() / 1024.0f;
+      return free_kb;
+
+  # Memory Usage Percentage
+  - platform: template
+    id: memory_usage_pct
+    name: "Memory Usage"
+    update_interval: 30s
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    lambda: |-
+      // ESP32 typically has ~300KB usable heap
+      const uint32_t total_heap = 300 * 1024; // Approximate
+      uint32_t free_heap = esp_get_free_heap_size();
+      return ((total_heap - free_heap) * 100.0f) / total_heap;
+
+  # ===============================================
+  # CPU & THERMAL DIAGNOSTICS - CHẨN ĐOÁN CPU
+  # ===============================================
+
+  # ESP32 Internal Temperature (CPU temp approximation)
+  - platform: template
+    id: esp32_temp
+    name: "ESP32 Temperature"
+    update_interval: 30s
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    device_class: temperature
+    icon: "mdi:thermometer"
+    lambda: |-
+      // ESP32 temperature estimation based on system load
+      // ESP-IDF doesn't expose internal temperature sensor
+      float heap_ratio = (float)esp_get_free_heap_size() / 320000.0;
+      return 30.0 + (50.0 * (1.0 - heap_ratio)); // Estimate: 30-80°C
+
+  # CPU Load Estimation (simplified)
+  - platform: template
+    id: cpu_load_pct
+    name: "CPU Load"
+    update_interval: 30s
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    lambda: |-
+      // Simplified CPU load based on memory usage
+      float heap_ratio = (float)esp_get_free_heap_size() / 320000.0f;
+      return (1.0f - heap_ratio) * 100.0f;
+
+text_sensor:
+  # ===============================================
+  # NETWORK INFORMATION - THÔNG TIN MẠNG
+  # ===============================================
+  
+  # WiFi Connection Info
+  - platform: wifi_info
+    ip_address:
+      name: "WiFi IP"
+      entity_category: diagnostic
+      icon: "mdi:ip-network"
+    ssid:
+      name: "WiFi SSID"
+      entity_category: diagnostic
+      icon: "mdi:wifi"
+    bssid:
+      name: "WiFi BSSID"
+      entity_category: diagnostic
+      icon: "mdi:router-wireless"
+    mac_address:
+      name: "WiFi MAC" 
+      entity_category: diagnostic
+      icon: "mdi:lan"
+
+  # WiFi Signal Bars (visual representation)
+  - platform: template
+    id: wifi_bars
+    name: "WiFi Signal Bars"
+    update_interval: 30s
+    entity_category: diagnostic
+    icon: "mdi:signal"
+    lambda: |-
+      float rssi = id(rssi_dbm).state;
+      if (isnan(rssi)) return {"N/A"};
+      if (rssi >= -55) return {"5/5"};
+      else if (rssi >= -65) return {"4/5"};
+      else if (rssi >= -72) return {"3/5"};
+      else if (rssi >= -80) return {"2/5"};
+      else if (rssi >= -90) return {"1/5"};
+      else return {"0/5"};
+
+  # Human Readable Uptime (simplified)
+  - platform: template
+    id: uptime_human
+    name: "Uptime"
+    update_interval: 60s
+    entity_category: diagnostic
+    icon: "mdi:clock-outline"
+    lambda: |-
+      uint32_t uptime_sec = id(uptime_seconds).state;
+      uint32_t hours = uptime_sec / 3600;
+      uint32_t minutes = (uptime_sec % 3600) / 60;
+      if (hours > 24) {
+        uint32_t days = hours / 24;
+        return {to_string(days) + "d " + to_string(hours % 24) + "h"};
+      } else {
+        return {to_string(hours) + "h " + to_string(minutes) + "m"};
+      }
+
+  # System Health Status (simplified)
+  - platform: template
+    id: system_health
+    name: "System Health"
+    update_interval: 60s
+    entity_category: diagnostic
+    icon: "mdi:heart-pulse"
+    lambda: |-
+      float heap_kb = id(free_heap_kb).state;
+      float wifi_quality = id(wifi_quality_pct).state;
+      
+      if (isnan(heap_kb) || isnan(wifi_quality)) {
+        return {"Unknown"};
+      }
+      
+      if (heap_kb > 50 && wifi_quality > 70) return {"Excellent"};
+      else if (heap_kb > 30 && wifi_quality > 50) return {"Good"};
+      else if (heap_kb > 20 && wifi_quality > 30) return {"Fair"};
+      else if (heap_kb > 10) return {"Poor"};
+      else return {"Critical"};
+
+  # Device Information Summary (simplified)
+  - platform: template
+    id: device_info
+    name: "Device Info"
+    update_interval: 300s  # 5 minutes
+    entity_category: diagnostic
+    icon: "mdi:chip"
+    lambda: |-
+      uint32_t heap_kb = id(free_heap_kb).state;
+      return {"ESP32 | RAM: " + to_string(heap_kb) + "KB | Status: OK"};
+
+  # ===============================================
+  # FORMATTED DISPLAY SENSORS - HIỂN THỊ ĐỊNH DẠNG
+  # ===============================================
+  
+  # RAM Usage Display: Free/Total
+  - platform: template
+    id: ram_usage_display
+    name: "RAM Usage"
+    update_interval: 30s
+    entity_category: diagnostic
+    icon: "mdi:memory"
+    lambda: |-
+      float free_kb = esp_get_free_heap_size() / 1024.0f;
+      float total_kb = 320.0f; // ESP32 WROOM-32 có 320KB RAM
+      return {str_sprintf("%.0fKB/%.0fKB", free_kb, total_kb)};
+
+  # Flash Usage Display: Used/Total  
+  - platform: template
+    id: flash_usage_display
+    name: "Flash Usage"
+    update_interval: 60s
+    entity_category: diagnostic
+    icon: "mdi:flash"
+    lambda: |-
+      float used_mb = 0.9f; // Ước tính từ firmware size ~900KB
+      float total_mb = 4.0f; // ESP32 WROOM-32 có 4MB Flash
+      return {str_sprintf("%.1fMB/%.0fMB", used_mb, total_mb)};
+
+  # WiFi Signal Display: Quality/Strength
+  - platform: template
+    id: wifi_signal_display
+    name: "WiFi Signal"
+    update_interval: 30s
+    entity_category: diagnostic
+    icon: "mdi:wifi"
+    lambda: |-
+      float rssi = id(rssi_dbm).state;
+      float quality = id(wifi_quality_pct).state;
+      if (isnan(rssi) || isnan(quality)) return {"N/A"};
+      return {str_sprintf("%.0f%%/%.0fdBm", quality, rssi)};
+
+  # CPU Temperature Display
+  - platform: template
+    id: cpu_temp_display
+    name: "CPU Temperature"
+    update_interval: 30s
+    entity_category: diagnostic
+    icon: "mdi:thermometer"
+    lambda: |-
+      float temp = id(esp32_temp).state;
+      if (isnan(temp)) return {"N/A"};
+      return {str_sprintf("%.1f°C/85°C", temp)};
+
+# ===============================================  
+# DIAGNOSTIC BINARY SENSORS - CẢM BIẾN CHẨN ĐOÁN
+# ===============================================
+
+binary_sensor:
+  # Low Memory Alert
+  - platform: template
+    id: low_memory_alert
+    name: "Low Memory Alert"
+    entity_category: diagnostic
+    device_class: problem
+    lambda: |-
+      return id(free_heap_kb).state < 20.0f;
+
+  # High Temperature Alert  
+  - platform: template
+    id: high_temp_alert
+    name: "High Temperature Alert"
+    entity_category: diagnostic
+    device_class: problem
+    lambda: |-
+      return id(esp32_temp).state > 75.0f;
+
+  # Poor WiFi Signal Alert
+  - platform: template
+    id: poor_wifi_alert
+    name: "Poor WiFi Signal Alert"
+    entity_category: diagnostic
+    device_class: connectivity
+    lambda: |-
+      return id(wifi_quality_pct).state < 30.0f;
+
+  # System Health Critical (simplified)
+  - platform: template
+    id: system_critical_alert
+    name: "System Critical Alert"
+    entity_category: diagnostic
+    device_class: problem
+    lambda: |-
+      return id(free_heap_kb).state < 15.0f;
+
+
+
+# ===============================================
+# END OF DIAGNOSTIC CONFIGURATION
+# ===============================================

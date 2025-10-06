@@ -1,0 +1,38 @@
+# ===============================================
+# ESP32 LED TEMPERATURE PRESSURE - MAIN CONFIG
+# ===============================================
+# Dự án: Điều khiển LED tự động với cảm biến môi trường
+# Tác giả: [Your Name]
+# Ngày tạo: October 6, 2025
+# Cấu trúc modular để dễ bảo trì
+# ===============================================
+
+# Security: Load sensitive information from secrets.yaml
+# File secrets.yaml chứa thông tin WiFi và passwords (không upload git)
+
+# WiFi Configuration (from secrets file)
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      bssid: !secret wifi_bssid
+      channel: !secret wifi_channel
+  fast_connect: true
+  power_save_mode: none
+  reboot_timeout: 10min
+
+# OTA Configuration (password from secrets)  
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# Import các module components
+packages:
+  common: !include components/common.yaml
+  motion_sensor: !include components/motion_sensor.yaml  
+  led_controls: !include components/led_controls.yaml
+  environment_sensors: !include components/environment_sensors.yaml
+  wifi_basic: !include components/wifi_monitoring.yaml
+  diagnostic: !include components/diagnostic.yaml
+  time_automation: !include components/time_automation.yaml
+  led2_scripts: !include components/led2_scripts.yaml

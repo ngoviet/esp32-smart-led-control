@@ -1,0 +1,33 @@
+# ESPHome Build Files
+.esphome/
+*.bin
+*.elf
+*.map
+
+# Sensitive Files
+secrets.yaml
+
+# Backup Files
+backup/
+*.bak
+*.backup
+
+# IDE Files
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python Files
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Logs
+*.log

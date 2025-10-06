@@ -1,0 +1,38 @@
+# ===================================================
+# ENVIRONMENT SENSORS - CẢM BIẾN MÔI TRƯỜNG 
+# ===================================================
+
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "Temp"
+      oversampling: 16x
+    pressure:
+      name: "Pressure"
+      oversampling: 16x
+    humidity:
+      name: "Humidity"
+      oversampling: 16x
+    address: 0x76
+    update_interval: 5s
+
+  - platform: adc
+    pin: 32
+    name: "Rain Sensor Value"
+    id: rain_sensor_adc
+    attenuation: auto
+    update_interval: 5s
+
+binary_sensor:
+  - platform: template
+    name: "Mưa?"
+    id: rain_detected
+    lambda: |-
+      static float threshold_on = 1.8;
+      static float threshold_off = 2.2;
+      static bool raining = false;
+      float value = id(rain_sensor_adc).state;
+      if (!raining && value < threshold_on) raining = true;
+      if (raining && value > threshold_off) raining = false;
+      return raining;
+    device_class: moisture

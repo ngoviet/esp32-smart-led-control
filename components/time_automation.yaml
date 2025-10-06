@@ -1,0 +1,85 @@
+# ===============================================
+# TIME & AUTOMATION - QUẢN LÝ THỜI GIAN VÀ TỰ ĐỘNG HÓA
+# ===============================================
+
+# Time window from HA helpers (fallback SNTP)
+globals:
+  - id: start_min
+    type: int
+    initial_value: '7*60'
+  - id: end_min
+    type: int
+    initial_value: '22*60'
+  - id: last_auto_off_day
+    type: int
+    initial_value: '-1'
+  - id: last_auto_on_day
+    type: int
+    initial_value: '-1'
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_auto_start_str
+    entity_id: input_datetime.auto_led2_start
+    on_value:
+      then:
+        - lambda: |-
+            int hh=0, mm=0, ss=0;
+            if (sscanf(id(ha_auto_start_str).state.c_str(), "%d:%d:%d", &hh, &mm, &ss) >= 2)
+              id(start_min) = hh*60 + mm;
+
+  - platform: homeassistant
+    id: ha_auto_end_str
+    entity_id: input_datetime.auto_led2_end
+    on_value:
+      then:
+        - lambda: |-
+            int hh=0, mm=0, ss=0;
+            if (sscanf(id(ha_auto_end_str).state.c_str(), "%d:%d:%d", &hh, &mm, &ss) >= 2)
+              id(end_min) = hh*60 + mm;
+
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time:
+      - seconds: 0
+        minutes: /1
+        then:
+          - lambda: |-
+              auto now = id(ha_time).now();
+              if (!now.is_valid()) return;
+              int m = now.hour*60 + now.minute;
+              if (m == id(end_min) && now.day_of_year != id(last_auto_off_day)) {
+                id(last_auto_off_day) = now.day_of_year;
+                id(mode_auto_led2).turn_off();
+              }
+              if (m == id(start_min) && now.day_of_year != id(last_auto_on_day)) {
+                id(last_auto_on_day) = now.day_of_year;
+                id(mode_auto_led2).turn_on();
+              }
+
+  - platform: sntp
+    id: ntp_time
+    timezone: Asia/Bangkok
+    servers:
+      - 0.asia.pool.ntp.org
+      - 1.asia.pool.ntp.org
+      - time.google.com
+    on_time:
+      - seconds: 0
+        minutes: /1
+        then:
+          - lambda: |-
+              auto ha = id(ha_time).now();
+              if (ha.is_valid()) return;
+              auto now = id(ntp_time).now();
+              if (!now.is_valid()) return;
+              int m = now.hour*60 + now.minute;
+              if (m == id(end_min) && now.day_of_year != id(last_auto_off_day)) {
+                id(last_auto_off_day) = now.day_of_year;
+                id(mode_auto_led2).turn_off();
+              }
+              if (m == id(start_min) && now.day_of_year != id(last_auto_on_day)) {
+                id(last_auto_on_day) = now.day_of_year;
+                id(mode_auto_led2).turn_on();
+              }
