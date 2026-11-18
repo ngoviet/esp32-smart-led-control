@@ -31,3 +31,11 @@ __pycache__/
 
 # Logs
 *.log
+
+# repowise API keys (local)
+.repowise/.env
+
+# local agent tooling
+.codegraph/
+.repowise/
+.mcp.json
