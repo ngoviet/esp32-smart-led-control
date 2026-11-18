@@ -15,8 +15,6 @@ wifi:
   networks:
     - ssid: !secret wifi_ssid
       password: !secret wifi_password
-      bssid: !secret wifi_bssid
-      channel: !secret wifi_channel
   fast_connect: true
   power_save_mode: none
   reboot_timeout: 10min
