@@ -1,85 +1,159 @@
 # ===============================================
-# TIME & AUTOMATION - QUẢN LÝ THỜI GIAN VÀ TỰ ĐỘNG HÓA
+# TIME & AUTOMATION - KHUNG GIỜ AUTO CỦA LED 2
+# ===============================================
+#
+# Khung giờ đặt bằng bốn ô số trên chính thiết bị (không cần helper trong
+# Home Assistant). End nhỏ hơn Start nghĩa là khung giờ vắt qua nửa đêm.
+#
+# Mỗi phút thiết bị tự hỏi "bây giờ có trong khung giờ không?" rồi mới suy ra
+# lúc vào/ra khung. Nhờ vậy lỡ một phút (khởi động lại, chưa có giờ) vẫn tự
+# bắt lại, khác với cách so khớp đúng một phút mỗi ngày.
 # ===============================================
 
-# Time window from HA helpers (fallback SNTP)
+esphome:
+  on_boot:
+    # Ưu tiên -100: chạy sau khi mọi thành phần đã khôi phục xong trạng thái.
+    # Trước mốc này led2_window_check không làm gì, vì các ô số và công tắc
+    # được khôi phục lần lượt và script có thể thấy giá trị dở dang.
+    priority: -100
+    then:
+      - lambda: id(led2_ready) = true;
+      - script.execute: led2_window_check
+
 globals:
-  - id: start_min
+  # -1: chưa có giờ; 0: ngoài khung giờ; 1: trong khung giờ.
+  - id: led2_window_state
     type: int
-    initial_value: '7*60'
-  - id: end_min
-    type: int
-    initial_value: '22*60'
-  - id: last_auto_off_day
-    type: int
-    initial_value: '-1'
-  - id: last_auto_on_day
-    type: int
+    restore_value: no
     initial_value: '-1'
 
-text_sensor:
-  - platform: homeassistant
-    id: ha_auto_start_str
-    entity_id: input_datetime.auto_led2_start
-    on_value:
-      then:
-        - lambda: |-
-            int hh=0, mm=0, ss=0;
-            if (sscanf(id(ha_auto_start_str).state.c_str(), "%d:%d:%d", &hh, &mm, &ss) >= 2)
-              id(start_min) = hh*60 + mm;
+  - id: led2_ready
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
-  - platform: homeassistant
-    id: ha_auto_end_str
-    entity_id: input_datetime.auto_led2_end
+number:
+  - platform: template
+    name: "Start Hour"
+    id: start_hour
+    icon: mdi:clock-start
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 5
+    min_value: 0
+    max_value: 23
+    step: 1
+    mode: box
     on_value:
-      then:
-        - lambda: |-
-            int hh=0, mm=0, ss=0;
-            if (sscanf(id(ha_auto_end_str).state.c_str(), "%d:%d:%d", &hh, &mm, &ss) >= 2)
-              id(end_min) = hh*60 + mm;
+      - script.execute: led2_window_check
 
+  - platform: template
+    name: "Start Minute"
+    id: start_minute
+    icon: mdi:clock-start
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 59
+    step: 1
+    mode: box
+    on_value:
+      - script.execute: led2_window_check
+
+  - platform: template
+    name: "End Hour"
+    id: end_hour
+    icon: mdi:clock-end
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 23
+    min_value: 0
+    max_value: 23
+    step: 1
+    mode: box
+    on_value:
+      - script.execute: led2_window_check
+
+  - platform: template
+    name: "End Minute"
+    id: end_minute
+    icon: mdi:clock-end
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 59
+    step: 1
+    mode: box
+    on_value:
+      - script.execute: led2_window_check
+
+# Hai nguồn giờ cùng chỉnh một đồng hồ hệ thống: Home Assistant khi có kết
+# nối, SNTP khi Home Assistant vắng mặt. Đồng hồ giữ được giờ qua khởi động
+# lại mềm (OTA, nút Restart), chỉ mất khi mất điện.
 time:
   - platform: homeassistant
     id: ha_time
+    timezone: ${timezone}
+    on_time_sync:
+      - script.execute: led2_window_check
     on_time:
+      # Mỗi phút: xét lại khung giờ, rồi đặt lại đèn theo cảm biến. Lượt đặt
+      # lại này để tự sửa nếu lỡ một sự kiện của cảm biến.
       - seconds: 0
-        minutes: /1
         then:
-          - lambda: |-
-              auto now = id(ha_time).now();
-              if (!now.is_valid()) return;
-              int m = now.hour*60 + now.minute;
-              if (m == id(end_min) && now.day_of_year != id(last_auto_off_day)) {
-                id(last_auto_off_day) = now.day_of_year;
-                id(mode_auto_led2).turn_off();
-              }
-              if (m == id(start_min) && now.day_of_year != id(last_auto_on_day)) {
-                id(last_auto_on_day) = now.day_of_year;
-                id(mode_auto_led2).turn_on();
-              }
+          - script.execute: led2_window_check
+          - script.execute: led2_sync
 
   - platform: sntp
     id: ntp_time
-    timezone: Asia/Bangkok
+    timezone: ${timezone}
     servers:
       - 0.asia.pool.ntp.org
       - 1.asia.pool.ntp.org
       - time.google.com
-    on_time:
-      - seconds: 0
-        minutes: /1
-        then:
-          - lambda: |-
-              auto ha = id(ha_time).now();
-              if (ha.is_valid()) return;
-              auto now = id(ntp_time).now();
-              if (!now.is_valid()) return;
-              int m = now.hour*60 + now.minute;
-              if (m == id(end_min) && now.day_of_year != id(last_auto_off_day)) {
-                id(last_auto_off_day) = now.day_of_year;
-                id(mode_auto_led2).turn_off();
-              }
-              if (m == id(start_min) && now.day_of_year != id(last_auto_on_day)) {
-                id(last_auto_on_day) = now.day_of_year;
-                id(mode_auto_led2).turn_on();
-              }
+    on_time_sync:
+      - script.execute: led2_window_check
+
+script:
+  - id: led2_window_check
+    mode: restart
+    then:
+      - lambda: |-
+          if (!id(led2_ready)) return;
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+          if (!id(start_hour).has_state() || !id(start_minute).has_state()) return;
+          if (!id(end_hour).has_state() || !id(end_minute).has_state()) return;
+
+          const int minute_now = now.hour * 60 + now.minute;
+          const int start = (int) id(start_hour).state * 60 + (int) id(start_minute).state;
+          const int end = (int) id(end_hour).state * 60 + (int) id(end_minute).state;
+          const bool in_window = (start <= end)
+              ? (minute_now >= start && minute_now < end)
+              : (minute_now >= start || minute_now < end);
+
+          const int previous = id(led2_window_state);
+          const int current = in_window ? 1 : 0;
+          if (previous == current) return;
+          id(led2_window_state) = current;
+
+          if (in_window) {
+            // Vào khung giờ, hoặc vừa có giờ sau khởi động khi đang trong khung.
+            ESP_LOGI("led2", "Vào khung giờ Auto");
+            // Đang ghi đè tay thì để nó chạy hết: led2_manual_hold sẽ tự bật
+            // Auto khi đủ thời gian, không cắt ngang thao tác của người dùng.
+            if (!id(led2_manual_hold).is_running()) {
+              id(mode_auto_led2).turn_on();
+              id(led2_sync).execute();
+            }
+          } else if (previous == 1) {
+            ESP_LOGI("led2", "Hết khung giờ Auto");
+            id(led2_auto_release).execute();
+            id(mode_auto_led2).turn_off();
+          }

@@ -1,109 +1,147 @@
 # ===============================================
 # LED CONTROLS - ĐIỀU KHIỂN ĐÈN LED VÀ NÚT BẤM
 # ===============================================
+#
+# LED 1: bật/tắt thuần tay (Home Assistant hoặc nút 1).
+#
+# LED 2 có hai chế độ:
+#   - Auto (công tắc "LED 2 Auto Mode" bật): đèn theo cảm biến hiện diện,
+#     chỉ khi "LD2410 Enable" bật và đang trong khung giờ Start-End.
+#   - Tay: bật/tắt "LED 2" (Home Assistant hoặc chạm nút 2) thì tạm rời Auto;
+#     sau ${led2_manual_timeout} không ai đụng nữa thì tự về Auto.
+#
+# Chân LED 2 (led_2_switch) chỉ được điều khiển trong tệp này: công tắc "LED 2"
+# và hai script led2_sync, led2_auto_release. Tệp khác muốn đổi đèn thì gọi
+# các script đó, để cờ led2_auto_lit luôn đúng.
+# ===============================================
 
 globals:
-  # Thời gian điều khiển manual LED2 (để auto return)
-  - id: led2_manual_time
-    type: unsigned long
-    initial_value: '0'
-  
-  # Manual override timeout (5 phút = 300000ms)
-  - id: led2_manual_timeout
-    type: unsigned long
-    initial_value: '300000'
+  # true khi LED 2 đang sáng do Auto bật. Ghi ngay lúc bật, vì về sau người
+  # dùng có thể tắt Auto hay LD2410 Enable trong khi đèn vẫn sáng.
+  - id: led2_auto_lit
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 switch:
+  - platform: gpio
+    name: "LED 1"
+    id: led_1_switch
+    pin:
+      number: GPIO12
+      # GPIO12 là chân strapping (chọn điện áp flash lúc khởi động). Thiết bị
+      # đang khởi động bình thường với mạch hiện tại; đừng gắn thêm điện trở
+      # kéo lên vào chân này, nếu không ESP32 sẽ không lên.
+      ignore_strapping_warning: true
+
+  # Chân thật của LED 2. Không có name nên không hiện trong Home Assistant.
+  - platform: gpio
+    id: led_2_switch
+    pin: GPIO13
+
   - platform: template
     name: "LED 2 Auto Mode"
     id: mode_auto_led2
+    icon: mdi:lightbulb-auto
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    icon: "mdi:lightbulb-auto"
+    # Vừa về Auto là đặt lại đèn theo cảm biến ngay, không chờ lần phát hiện kế.
+    on_turn_on:
+      - script.execute: led2_sync
 
-  - platform: gpio
-    pin: GPIO12
-    name: "LED 1"
-    id: led_1_switch
-
-  - platform: gpio
-    pin: GPIO13
-    id: led_2_switch
-    internal: true  # GPIO control, không hiển thị trực tiếp
-
-  # LED2 với manual override và auto return
+  # Công tắc LED 2 mà người dùng thấy: mọi thao tác ở đây là "ghi đè tay".
   - platform: template
     name: "LED 2"
     id: led_2_manual
-    icon: "mdi:lightbulb"
-    turn_on_action:
-      - switch.turn_on: led_2_switch
-      - switch.turn_off: mode_auto_led2  # Tắt chế độ auto tạm thời
-      - globals.set:
-          id: led2_manual_time
-          value: !lambda 'return millis();'
-    turn_off_action:
-      - switch.turn_off: led_2_switch
-      - switch.turn_off: mode_auto_led2  # Tắt chế độ auto tạm thời
-      - globals.set:
-          id: led2_manual_time
-          value: !lambda 'return millis();'
+    icon: mdi:lightbulb
+    # DISABLED là bắt buộc. Với mặc định ALWAYS_OFF, ESPHome gọi turn_off_action
+    # ngay lúc khởi động, tức là tự "ghi đè tay" và làm Auto tắt 5 phút sau
+    # mỗi lần khởi động lại.
+    restore_mode: DISABLED
     lambda: |-
       return id(led_2_switch).state;
+    turn_on_action:
+      - lambda: id(led2_auto_lit) = false;
+      - switch.turn_on: led_2_switch
+      - script.execute: led2_manual_hold
+    turn_off_action:
+      - lambda: id(led2_auto_lit) = false;
+      - switch.turn_off: led_2_switch
+      - script.execute: led2_manual_hold
 
-# AUTO RETURN LOGIC - Tự động quay về chế độ auto sau khi timeout
-interval:
-  - interval: 30s  # Kiểm tra mỗi 30 giây
+script:
+  # Đặt LED 2 theo cảm biến hiện diện, chỉ khi cả ba điều kiện Auto cùng đúng.
+  # Gọi từ: cảm biến đổi trạng thái, vừa về Auto, bật lại LD2410, vào khung
+  # giờ, và mỗi phút một lần để tự sửa nếu lỡ một sự kiện.
+  - id: led2_sync
+    mode: restart
     then:
       - lambda: |-
-          // Kiểm tra nếu đang trong manual mode và đã timeout
-          if (!id(mode_auto_led2).state && id(led2_manual_time) > 0) {
-            unsigned long current_time = millis();
-            unsigned long elapsed = current_time - id(led2_manual_time);
-            
-            // Nếu đã quá timeout (5 phút) thì tự động quay về auto mode
-            if (elapsed >= id(led2_manual_timeout)) {
-              ESP_LOGI("LED2", "Manual timeout reached, returning to auto mode");
-              id(mode_auto_led2).turn_on();
-              id(led2_manual_time) = 0;
-            }
+          if (!id(mode_auto_led2).state) return;
+          if (!id(ld2410_enable).state) return;
+          if (id(led2_window_state) != 1) return;
+          if (id(presence_sensor).state) {
+            id(led_2_switch).turn_on();
+            id(led2_auto_lit) = true;
+          } else {
+            id(led_2_switch).turn_off();
+            id(led2_auto_lit) = false;
           }
 
+  # Hết khung giờ: tắt đèn nếu chính Auto đã bật nó. Đèn bật tay thì để yên.
+  - id: led2_auto_release
+    mode: restart
+    then:
+      - lambda: |-
+          if (!id(led2_auto_lit)) return;
+          id(led_2_switch).turn_off();
+          id(led2_auto_lit) = false;
 
+  # Ghi đè tay: rời Auto, đếm ${led2_manual_timeout}, rồi về Auto.
+  # mode restart: mỗi thao tác tay mới đếm lại từ đầu.
+  # Về Auto cả khi đang ngoài khung giờ; lúc đó Auto chỉ "chờ", không đổi đèn.
+  - id: led2_manual_hold
+    mode: restart
+    then:
+      - switch.turn_off: mode_auto_led2
+      - delay: ${led2_manual_timeout}
+      - logger.log:
+          level: INFO
+          tag: led2
+          format: "Hết thời gian ghi đè tay, LED 2 về Auto"
+      - switch.turn_on: mode_auto_led2
 
 binary_sensor:
+  # Nút 1: nút nhấn thường, mỗi lần nhấn đảo LED 1.
   - platform: gpio
+    name: "Button LED 1"
+    id: button1
     pin:
       number: GPIO14
       mode: INPUT_PULLUP
-      inverted: true
-    id: button1
-    name: "Nút tay LED 1"
+      inverted: ${button1_inverted}
+    filters:
+      - delayed_on_off: 30ms
     on_press:
-      then:
-        - switch.toggle: led_1_switch
+      - switch.toggle: led_1_switch
 
-  # NÚT CẢM ỨNG LED 2 - MANUAL OVERRIDE
+  # Nút 2: chạm ngắn đảo LED 2 (ghi đè tay), giữ lâu để về Auto ngay.
   - platform: gpio
+    name: "Button LED 2"
+    id: button2
     pin:
       number: GPIO27
-      mode: INPUT
-    id: button2
-    name: "Nút cảm ứng LED 2"
+      mode: INPUT_PULLUP
+      inverted: ${button2_inverted}
     filters:
-      - delayed_on: 60ms
-      - delayed_off: 60ms
+      - delayed_on_off: 60ms
     on_click:
       - min_length: 80ms
-        max_length: 700ms
+        max_length: 799ms
         then:
-          # Toggle LED2 và đặt manual override
           - switch.toggle: led_2_manual
       - min_length: 800ms
         max_length: 5s
         then:
-          # Bấm lâu để trở về chế độ auto
+          - script.stop: led2_manual_hold
           - switch.turn_on: mode_auto_led2
-          - globals.set:
-              id: led2_manual_time
-              value: '0'

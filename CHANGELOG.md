@@ -1,5 +1,93 @@
 # 📝 CHANGELOG - Nhật ký thay đổi
 
+## [2026-11-18] v3.0 - Dựng lại cấu hình cho khớp firmware đang chạy
+
+### Vì sao
+
+Firmware trên thiết bị (ESPHome 2026.4.3, biên dịch 03/07/2026) được nạp từ một bản `main.yaml`
+chưa từng được commit. Bản đó và tệp `firmware.elf` đi kèm về sau hỏng, không đọc lại được. Repo
+vẫn giữ cấu hình tháng 10/2025 nên lệch hẳn thiết bị:
+
+- thiếu 10 thực thể mà Home Assistant đang dùng: `Start Hour`, `Start Minute`, `End Hour`,
+  `End Minute`, `LD2410 Enable`, `Moving Target`, `Still Target`, `Moving Distance`,
+  `Still Distance`, `Detection Distance`;
+- 3 thực thể mang tên khác: `Phát hiện người`, `Nút tay LED 1`, `Nút cảm ứng LED 2`
+  (thiết bị dùng `Presence Detection`, `Button LED 1`, `Button LED 2`);
+- thừa 20 thực thể chẩn đoán không có trên thiết bị.
+
+Nạp bản cũ của repo sẽ làm dashboard Home Assistant mất các thực thể trên. Cấu hình lần này được
+dựng lại từ ba nguồn đọc trực tiếp ở thiết bị đang chạy: danh sách 28 thực thể kèm thuộc tính
+trong Home Assistant, log API của thiết bị, và lịch sử trạng thái 7 ngày.
+
+### Khớp với thiết bị
+
+- Đủ và đúng tên 28 thực thể (tên là khoá định danh bên Home Assistant).
+- Khung giờ Auto của LED 2 đặt bằng bốn ô số trên thiết bị, mặc định 05:00–23:00, cho phép vắt
+  qua nửa đêm. Bỏ hai helper `input_datetime.auto_led2_start/end`.
+- Thêm công tắc `LD2410 Enable`: tắt thì cảm biến vẫn báo về nhưng không điều khiển LED 2.
+- Thêm `Moving Target`, `Still Target` và ba khoảng cách của LD2410.
+- Chu kỳ BME280, RSSI và cảm biến mưa là 60 giây; logger ở mức `INFO`; không có `web_server`.
+
+### Sửa lỗi
+
+1. **LED 2 kẹt sáng sau giờ kết thúc.** Hết khung giờ, chế độ Auto tắt nhưng đèn đang sáng do
+   Auto không được tắt theo, nên sáng tới khi có người tắt tay. Nay thiết bị ghi lại lúc Auto bật
+   đèn, và hết khung giờ thì tắt đúng những đèn đó, kể cả khi Auto hay `LD2410 Enable` đã bị tắt
+   trong lúc đèn đang sáng. Đèn bật tay vẫn để yên.
+2. **Nút chạm LED 2 phải chạm hai lần mới ăn.** Cực tính nút bị ngược nên `on_click` đo nhầm
+   khoảng nghỉ giữa hai lần chạm. Nay đảo cực tính: chạm một lần là đảo trạng thái.
+3. **Lỡ phút chuyển khung giờ là hỏng cả ngày.** Bản cũ so khớp đúng một phút mỗi ngày; nếu lúc
+   đó thiết bị đang khởi động lại hoặc chưa có giờ thì Auto không bật lại. Nay thiết bị tự hỏi mỗi
+   phút "có đang trong khung giờ không" và bật lại Auto ngay khi có giờ sau khởi động.
+4. **Tự khởi động lại khi WiFi rớt đúng lúc kiểm.** Bản cũ kiểm WiFi mỗi 2 phút và khởi động lại
+   nếu thấy mất kết nối ở đúng thời điểm kiểm, dù chỉ rớt một giây. Bỏ đoạn này; `wifi.reboot_timeout`
+   10 phút đã lo trường hợp mất mạng kéo dài.
+5. **Về Auto xong đèn vẫn giữ trạng thái tay.** Nay vừa về Auto là đèn được đặt lại theo cảm biến,
+   không chờ lần phát hiện kế tiếp.
+6. **Nút 1 không chống dội.** Thêm lọc 30 ms.
+7. **Auto tắt 5 phút sau mỗi lần khởi động lại.** Công tắc `LED 2` không khai `restore_mode`, nên
+   ESPHome chạy lệnh tắt của nó lúc khởi động và lệnh đó được tính là một lần ghi đè tay. Dấu vết
+   trong lịch sử ngày 14/11: 08:55:34 Auto tắt ngay sau khi thiết bị kết nối lại, 09:00:32 tự
+   bật. Nay công tắc dùng `restore_mode: DISABLED`, và khung giờ chỉ được xét sau khi mọi thành
+   phần đã khôi phục xong trạng thái.
+
+Hai điểm được làm cho rõ thay vì để ngẫu nhiên:
+
+- Ghi đè tay sát giờ bắt đầu không bị cắt ngang: Auto chờ lượt ghi đè chạy hết rồi mới bật.
+- Mỗi phút thiết bị đặt lại đèn theo cảm biến một lần, để tự sửa nếu lỡ một sự kiện.
+
+### Tối ưu
+
+- Khoảng cách LD2410 gửi tối đa 5 giây một lần thay vì mỗi giây (ba cảm biến, bớt khoảng 5 lần
+  bản ghi trong recorder của Home Assistant). Bộ lọc `timeout` đi kèm gửi lại giá trị cuối khi
+  cảm biến im lặng, để Home Assistant không giữ số đo cũ.
+- Cảm biến mưa: đo mỗi 10 giây, gửi trung bình 6 mẫu mỗi phút, bớt nhiễu ADC.
+- Ghi đè tay dùng `script` với `delay` thay cho vòng kiểm `millis()` mỗi 30 giây: về Auto đúng
+  5 phút thay vì 5 phút đến 5 phút 30 giây.
+- Việc bật/tắt LED 2 gom về một tệp, `components/led_controls.yaml`: công tắc `LED 2` và hai
+  script `led2_sync`, `led2_auto_release` (trước đây cùng một đoạn logic lặp lại ở bốn chỗ).
+- Bỏ các chỉ số "ước lượng" gây hiểu nhầm: nhiệt độ CPU và tải CPU suy từ RAM trống, dung lượng
+  flash ghi cứng, và các cảnh báo dựa trên chúng.
+- Bỏ `components/wifi_monitoring.yaml` (chỉ còn chú thích) và `components/led2_scripts.yaml`
+  (bốn script không được gọi ở đâu).
+- Tham số hay chỉnh đưa lên `substitutions` trong `main.yaml`.
+
+### Công cụ và tài liệu
+
+- CI mới `.github/workflows/esphome.yml`: chạy `esphome config main.yaml` với secrets mẫu.
+- `secrets.template.yaml` chỉ còn các khoá thật sự được dùng.
+- README (Anh, Việt), hướng dẫn LED 2, ví dụ và `CLAUDE.md` viết lại theo cấu hình hiện tại.
+
+### Cần biết trước khi nạp
+
+- Bản này **chưa được nạp** lên thiết bị. Logic được viết lại theo hành vi quan sát được, không
+  phải chép từ nguồn gốc.
+- Người quen chạm nút LED 2 hai lần sẽ thấy đèn bật rồi tắt lại: từ nay chỉ cần chạm một lần.
+- Sau khi nạp, kiểm `Button LED 1` và `Button LED 2` trong Home Assistant: không nhấn phải là
+  `off`. Nếu ngược, đổi `button1_inverted` / `button2_inverted` trong `main.yaml`.
+
+---
+
 ## 🎯 [2024-12-23] v2.6 - LED2 Manual Override với Auto Return
 
 ### Thay đổi chính:

@@ -1,149 +1,80 @@
-# 💡 HƯỚNG DẪN SỬ DỤNG LED2 - MANUAL OVERRIDE VỚI AUTO RETURN
+# Hướng dẫn LED 2: chế độ Auto và ghi đè tay
 
-## 🎯 Tổng quan tính năng
+LED 2 bình thường tự bật/tắt theo người. Bạn vẫn bật/tắt bằng tay được bất cứ lúc nào; khi đó
+đèn tạm rời chế độ Auto rồi tự quay về, để không ai phải nhớ trả lại.
 
-LED2 được thiết kế với **Manual Override thông minh**: có thể điều khiển thủ công tạm thời, nhưng tự động quay về chế độ tự động để tiết kiệm năng lượng và đảm bảo hoạt động ổn định.
+## Ba thứ quyết định LED 2
 
----
+| Thực thể | Vai trò |
+| --- | --- |
+| `LED 2 Auto Mode` | Bật: đèn theo cảm biến hiện diện. Tắt: cảm biến không đổi đèn nữa; đèn đang sáng do Auto vẫn được tắt khi hết khung giờ. |
+| `LD2410 Enable` | Bật: cảm biến LD2410 được phép điều khiển đèn. Tắt: cảm biến vẫn đo và báo về Home Assistant nhưng không đụng tới đèn. |
+| `Start Hour`, `Start Minute`, `End Hour`, `End Minute` | Khung giờ Auto hằng ngày, mặc định 05:00–23:00. End nhỏ hơn Start nghĩa là khung giờ vắt qua nửa đêm (ví dụ 18:00–06:00). |
 
-## 🔧 Chế độ hoạt động
+LED 2 chỉ tự chạy theo người khi **cả ba cùng thuận**: Auto bật, LD2410 bật và đang trong khung giờ.
 
-### 1. 🤖 **Chế độ Tự động** (Mặc định)
-- LED2 bật/tắt theo cảm biến chuyển động LD2410
-- Hoạt động theo thời gian đã cài đặt (6:00 - 22:00)
-- Tiết kiệm năng lượng tự động
+## Một ngày của LED 2
 
-### 2. 🖐️ **Chế độ Manual Override**
-- Điều khiển trực tiếp qua Home Assistant
-- Tạm thời vô hiệu hóa chế độ tự động
-- **Tự động quay về auto sau 5 phút không hoạt động**
+| Lúc | Điều xảy ra |
+| --- | --- |
+| Vào khung giờ (05:00) | `LED 2 Auto Mode` tự bật, đèn đặt lại theo cảm biến. Nếu bạn vừa bật/tắt tay chưa đủ 5 phút, việc này chờ hết 5 phút đó. |
+| Trong khung giờ | Có người thì sáng, hết người thì tắt. |
+| Hết khung giờ (23:00) | `LED 2 Auto Mode` tự tắt. Đèn đang sáng do Auto thì được tắt theo; đèn bạn bật tay thì để yên. |
+| Ngoài khung giờ | Cảm biến không điều khiển đèn. Bạn vẫn bật/tắt tay được. |
 
----
+## Ghi đè tay
 
-## 🕹️ Cách điều khiển
+Bật hoặc tắt `LED 2` bằng một trong hai cách:
 
-### 📱 **Qua Home Assistant**
+- **Home Assistant**: gạt công tắc `LED 2`.
+- **Nút chạm (GPIO27)**: chạm ngắn (dưới 0,8 giây).
 
-1. **Bật/Tắt thủ công LED2:**
-   - Vào Home Assistant → Thiết bị ESP32
-   - Tìm switch "LED 2" 
-   - Bấm ON/OFF → LED2 chuyển sang manual mode
+Ngay lúc đó `LED 2 Auto Mode` tắt và bắt đầu đếm 5 phút. Mỗi lần bạn bật/tắt tay nữa, đồng hồ đếm
+lại từ đầu. Hết 5 phút, Auto tự bật lại và đèn được đặt lại theo cảm biến.
 
-2. **Kiểm tra trạng thái Auto Mode:**
-   - Switch "LED 2 Auto Mode" hiển thị trạng thái hiện tại
-   - ON = Chế độ tự động
-   - OFF = Đang trong manual override
+Muốn về Auto ngay, không chờ 5 phút:
 
-3. **Quay về chế độ tự động:**
-   - Bật switch "LED 2 Auto Mode"
-   - Hoặc đợi 5 phút sẽ tự động quay về
+- bật `LED 2 Auto Mode` trong Home Assistant, hoặc
+- giữ nút chạm 0,8–5 giây.
 
-### 🔲 **Qua nút vật lý (GPIO27)**
+Muốn tắt hẳn việc đèn theo người (ví dụ khi có khách ngủ lại): tắt `LD2410 Enable`. Công tắc này
+không tự bật lại.
 
-1. **Bấm ngắn (80ms - 700ms):**
-   - Toggle LED2 ON/OFF
-   - Chuyển sang manual mode
+## Vài tình huống hay gặp
 
-2. **Bấm lâu (800ms - 5s):**
-   - **Force về chế độ tự động** ngay lập tức
-   - Bỏ qua timeout 5 phút
+**Bật tay ngoài khung giờ rồi quên.** Sau 5 phút `LED 2 Auto Mode` bật lại nhưng vì đang ngoài
+khung giờ nên đèn vẫn sáng cho tới khi bạn tắt, hoặc tới giờ Start kế tiếp: lúc đó đèn được đặt
+lại theo cảm biến. Đây là chủ ý: ban đêm không tự tắt đèn bạn vừa bật.
 
----
+**Tắt `LD2410 Enable` khi đèn đang sáng.** Đèn giữ nguyên. Nếu đèn đó do Auto bật thì đến giờ End
+nó vẫn được tắt; nếu bạn bật tay thì nó sáng tới khi bạn tắt.
 
-## ⏱️ Logic thời gian
+**Mất WiFi lâu.** Mất Home Assistant không ảnh hưởng gì tới đèn. Mất WiFi liên tục 10 phút thì
+thiết bị tự khởi động lại, và cả hai đèn trở về trạng thái tắt.
 
-### 🔄 **Auto Return Mechanism**
-```
-Manual Override → 5 phút timeout → Tự động về Auto Mode
-```
+**Đèn không sáng dù có người.** Kiểm lần lượt: `LED 2 Auto Mode` có bật không, `LD2410 Enable` có
+bật không, giờ hiện tại có nằm trong khung Start–End không, `Presence Detection` có báo `on` không.
 
-### 📊 **Timeline hoạt động:**
-- **0:00**: Bấm manual override → LED2 manual mode
-- **4:59**: Vẫn trong manual mode
-- **5:00**: ⚡ Tự động chuyển về auto mode
-- **5:01+**: LED2 hoạt động theo cảm biến chuyển động
+**Chạm nút không ăn.** Xem thực thể `Button LED 2` trong Home Assistant: lúc không chạm phải là
+`off`, lúc chạm phải lên `on`. Nếu ngược lại, đổi `button2_inverted` trong `main.yaml` thành
+`"false"` rồi nạp lại.
 
----
+**Thiết bị vừa khởi động lại.** Nếu đang trong khung giờ, Auto được bật lại ngay khi thiết bị lấy
+được giờ (từ Home Assistant hoặc SNTP). Khi chưa có giờ, cảm biến chưa điều khiển đèn.
 
-## 🎯 Các trường hợp sử dụng
+## Thông số chỉnh được
 
-### ✅ **Khi nào dùng Manual Override:**
-- 🛠️ **Bảo trì**: Cần ánh sáng ổn định để làm việc
-- 📚 **Đọc sách**: Cần đèn sáng liên tục không bị tắt
-- 🎮 **Chơi game**: Tránh đèn nhấp nháy khi ngồi yên
-- 🍽️ **Ăn uống**: Cần ánh sáng ổn định trong bữa ăn
+| Thông số | Ở đâu | Mặc định |
+| --- | --- | --- |
+| Thời gian ghi đè tay | `led2_manual_timeout` trong `main.yaml` | `5min` |
+| Khung giờ Auto | bốn ô số trong Home Assistant (lưu trên thiết bị) | 05:00–23:00 |
+| Độ dài chạm ngắn / giữ lâu | `on_click` của `button2` trong `components/led_controls.yaml` | 80–799 ms / 0,8–5 s |
+| Nhịp gửi khoảng cách LD2410 (thưa nhất) | `ld2410_distance_interval` trong `main.yaml` | `5s` |
 
-### ✅ **Auto Return bảo vệ:**
-- 💡 **Tiết kiệm điện**: Tránh quên tắt đèn
-- 🔋 **Bảo vệ thiết bị**: Không để LED hoạt động liên tục quá lâu
-- 🤖 **Tự động hóa**: Quay về chế độ thông minh khi không cần thiết
+## So với LED 1
 
----
-
-## 🚨 Xử lý sự cố
-
-### ❓ **LED2 không phản hồi manual control:**
-1. Kiểm tra "LED 2 Auto Mode" có đang ON không
-2. Thử bấm lâu nút GPIO27 để force auto mode
-3. Sau đó thử manual override lại
-
-### ❓ **LED2 không tự động quay về:**
-1. Kiểm tra log ESP32 có thông báo "Manual timeout reached"
-2. Restart thiết bị qua Home Assistant
-3. Kiểm tra global variables có được reset không
-
-### ❓ **Nút vật lý không hoạt động:**
-1. Kiểm tra connection GPIO27
-2. Thử cả bấm ngắn và bấm lâu
-3. Xem log để kiểm tra button events
-
----
-
-## 🔍 Debug & Monitoring
-
-### 📊 **Theo dõi trạng thái:**
-- **LED 2**: Trạng thái hiện tại của LED (ON/OFF)
-- **LED 2 Auto Mode**: Chế độ tự động có được bật không
-- **System Health**: Tổng quan tình trạng hệ thống
-
-### 📝 **Log messages để theo dõi:**
-```
-LED2: Manual timeout reached, returning to auto mode
-```
-
-### 🔧 **Tham số có thể điều chỉnh:**
-- **Timeout**: Hiện tại 5 phút (300000ms)
-- **Check interval**: 30 giây
-- **Button timing**: 80ms-700ms (ngắn), 800ms-5s (dài)
-
----
-
-## 💡 Mẹo sử dụng
-
-### 🎯 **Tối ưu hóa:**
-- Dùng manual override chỉ khi thực sự cần thiết
-- Nhớ bấm lâu nút để về auto mode khi xong việc
-- Theo dõi "LED 2 Auto Mode" để biết trạng thái
-
-### 🔄 **Workflow khuyến nghị:**
-1. Bình thường → Để auto mode
-2. Cần điều khiển → Manual override via HA
-3. Xong việc → Bấm lâu nút hoặc đợi 5 phút
-4. Quay về → Auto mode cho hoạt động bình thường
-
----
-
-## ⚖️ **So sánh với LED1**
-
-| Tính năng | LED1 | LED2 |
-|-----------|------|------|
-| **Manual Control** | ✅ Luôn có sẵn | ✅ Có timeout |
-| **Auto Mode** | ❌ Không có | ✅ Có |
-| **Motion Detection** | ❌ Không | ✅ Có |
-| **Time Control** | ❌ Không | ✅ 6:00-22:00 |
-| **Button Control** | ✅ Toggle đơn giản | ✅ Multi-mode |
-| **Energy Saving** | ❌ Manual only | ✅ Auto return |
-
----
-
-🎉 **Tận hưởng LED2 thông minh với sự cân bằng hoàn hảo giữa điều khiển thủ công và tự động hóa!** 🎉
+| | LED 1 | LED 2 |
+| --- | --- | --- |
+| Bật/tắt tay | Luôn được, giữ nguyên trạng thái | Được, tự về Auto sau 5 phút |
+| Theo người | Không | Có, trong khung giờ |
+| Nút vật lý | Nhấn là đảo trạng thái | Chạm ngắn đảo trạng thái, giữ lâu về Auto |
