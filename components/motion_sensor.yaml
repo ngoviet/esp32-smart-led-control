@@ -1,5 +1,5 @@
 # ===============================================
-# MOTION SENSOR - CẢM BIẾN CHUYỂN ĐỘNG LD2410
+# MOTION SENSOR - CẢM BIẾN HIỆN DIỆN mmWave LD2410
 # ===============================================
 
 uart:
@@ -7,40 +7,74 @@ uart:
   tx_pin: GPIO17
   rx_pin: GPIO16
   baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
   rx_buffer_size: 512
 
 ld2410:
-  uart_id: uart_ld2410
   id: mmwave
+  uart_id: uart_ld2410
 
 binary_sensor:
   - platform: ld2410
+    ld2410_id: mmwave
     has_target:
-      name: "Phát hiện người"
+      name: "Presence Detection"
       id: presence_sensor
-      on_press:
-        then:
-          - if:
-              condition:
-                lambda: |-
-                  auto now = id(ha_time).now();
-                  if (!now.is_valid()) now = id(ntp_time).now();
-                  if (!now.is_valid()) return false;
-                  int m = now.hour*60 + now.minute;
-                  bool in_window = (m >= id(start_min)) && (m < id(end_min));
-                  return in_window && id(mode_auto_led2).state;
-              then:
-                - switch.turn_on: led_2_switch
-      on_release:
-        then:
-          - if:
-              condition:
-                lambda: |-
-                  auto now = id(ha_time).now();
-                  if (!now.is_valid()) now = id(ntp_time).now();
-                  if (!now.is_valid()) return false;
-                  int m = now.hour*60 + now.minute;
-                  bool in_window = (m >= id(start_min)) && (m < id(end_min));
-                  return in_window && id(mode_auto_led2).state;
-              then:
-                - switch.turn_off: led_2_switch
+      # Cả trạng thái đầu tiên sau khởi động cũng phải tới led2_sync, nếu
+      # không đèn sẽ không sáng cho tới khi cảm biến đổi trạng thái lần nữa.
+      trigger_on_initial_state: true
+      # Việc bật/tắt LED 2 do script led2_sync quyết (led_controls.yaml).
+      on_state:
+        - script.execute: led2_sync
+    has_moving_target:
+      name: "Moving Target"
+    has_still_target:
+      name: "Still Target"
+
+sensor:
+  # LD2410 chỉ báo khoảng cách khi giá trị đổi. Mặc định ESPHome cho qua tối
+  # đa 1 giá trị/giây; ở đây giãn ra ${ld2410_distance_interval}, đủ cho
+  # dashboard và nhẹ hơn cho recorder của Home Assistant.
+  # Hai bộ lọc phải đi cùng nhau: throttle bỏ bớt giá trị, còn timeout gửi lại
+  # giá trị cuối cùng khi cảm biến im lặng. Thiếu timeout thì Home Assistant
+  # sẽ giữ mãi một số đo cũ sau khi người đã rời đi.
+  - platform: ld2410
+    ld2410_id: mmwave
+    moving_distance:
+      name: "Moving Distance"
+      icon: mdi:walk
+      filters:
+        - timeout:
+            timeout: ${ld2410_distance_interval}
+            value: last
+        - throttle_with_priority: ${ld2410_distance_interval}
+    still_distance:
+      name: "Still Distance"
+      icon: mdi:account
+      filters:
+        - timeout:
+            timeout: ${ld2410_distance_interval}
+            value: last
+        - throttle_with_priority: ${ld2410_distance_interval}
+    detection_distance:
+      name: "Detection Distance"
+      icon: mdi:radar
+      filters:
+        - timeout:
+            timeout: ${ld2410_distance_interval}
+            value: last
+        - throttle_with_priority: ${ld2410_distance_interval}
+
+switch:
+  # Cổng phần mềm: tắt thì LD2410 vẫn đo và báo về Home Assistant, nhưng
+  # không còn điều khiển LED 2. Đèn đang sáng lúc tắt công tắc này thì giữ
+  # nguyên; nếu do Auto bật, nó vẫn được tắt khi hết khung giờ.
+  - platform: template
+    name: "LD2410 Enable"
+    id: ld2410_enable
+    icon: mdi:radar
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: led2_sync

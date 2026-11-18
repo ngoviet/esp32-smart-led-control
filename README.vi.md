@@ -6,8 +6,8 @@
 
 **Hệ thống điều khiển LED thông minh với cảm biến môi trường và Home Assistant**, viết bằng
 **ESPHome** trên **ESP32 WROOM-32**. Điều khiển hai dải LED 24V qua MOSFET, đọc BME280 (nhiệt độ,
-độ ẩm, áp suất), cảm biến mưa và cảm biến chuyển động mmWave LD2410, tự bật/tắt đèn theo thời
-gian và theo người.
+độ ẩm, áp suất), cảm biến mưa và cảm biến hiện diện mmWave LD2410, tự bật/tắt một dải đèn theo
+khung giờ và theo người.
 
 > 🇻🇳 Dự án do một người Việt tự xây dựng và duy trì — nếu nó giúp ích cho bạn, hãy
 > [ủng hộ dự án](#ủng-hộ-dự-án).
@@ -24,213 +24,171 @@ gian và theo người.
 
 ## Tính năng
 
-- **Tích hợp Home Assistant** - Điều khiển từ xa qua HA
-- **Giám sát môi trường** - Nhiệt độ, độ ẩm, áp suất (BME280)
-- **Cảm biến mưa** - Phát hiện mưa tự động
-- **Cảm biến chuyển động** - LD2410 phát hiện người
-- **Tự động theo thời gian** - Hoạt động 18:00-06:00
-- **LED2 thông minh** - Điều khiển thủ công với tự động quay về
-- **Giám sát hệ thống** - RAM, CPU, WiFi, uptime
-- **Cấu trúc modular** - Dễ bảo trì và mở rộng
+- **Hai kênh LED 24V** — LED 1 bật/tắt tay (Home Assistant hoặc nút nhấn); LED 2 có thể theo người
+- **LED 2 theo hiện diện** — cảm biến mmWave LD2410 chỉ bật LED 2 trong khung giờ hằng ngày
+- **Ghi đè tay, tự về Auto** — bật/tắt LED 2 bằng tay thì tạm rời Auto 5 phút
+- **Khung giờ đặt ngay trên thiết bị** — bốn ô số, không cần helper trong Home Assistant; khung giờ được phép vắt qua nửa đêm
+- **Giám sát môi trường** — nhiệt độ, độ ẩm, áp suất (BME280) và cảm biến mưa có vùng trễ
+- **Vẫn chạy khi mất mạng** — nút bấm và điều khiển theo người chạy ngay trên thiết bị. Mất Home Assistant không bao giờ làm nó khởi động lại; mất WiFi thì sau 10 phút mới khởi động lại
+- **Cấu hình chia module** — mỗi chức năng một tệp YAML
 
 ## Phần cứng
 
 ### Linh kiện
 
-- **ESP32 WROOM-32** (4MB Flash, 320KB RAM)
-- **BME280** - Cảm biến nhiệt độ, độ ẩm, áp suất (I2C)
-- **LD2410** - Cảm biến chuyển động (UART)
-- **Rain Sensor** - Cảm biến mưa (ADC)
-- **2x LED strips** - Đèn LED điều khiển
-- **MOSFET 24V** - Điều khiển công suất cao
+- **ESP32 WROOM-32** (`esp32dev`, flash 4 MB)
+- **BME280** — nhiệt độ, độ ẩm, áp suất (I2C, địa chỉ `0x76`)
+- **LD2410** — cảm biến hiện diện mmWave (UART, 256000 baud)
+- **Cảm biến mưa** — mạch analog đọc qua ADC
+- **2 dải LED 24V**, mỗi dải đóng cắt bằng một **module MOSFET AOD4184**
+- **Mạch hạ áp 24V → 5V** cấp nguồn cho ESP32
+- **2 nút** — nút nhấn cho LED 1 và nút chạm cho LED 2
 
-### Kết nối GPIO
+Sơ đồ mạch của một kênh LED: [`so_do_esp32_led_24v_mosfet.pdf`](so_do_esp32_led_24v_mosfet.pdf).
 
-```
-GPIO21 (SDA) ➜ BME280 SDA
-GPIO22 (SCL) ➜ BME280 SCL
-GPIO16 (RX)  ➜ LD2410 TX
-GPIO17 (TX)  ➜ LD2410 RX
-GPIO36 (ADC) ➜ Rain Sensor
-GPIO12       ➜ LED 1 Control
-GPIO13       ➜ LED 2 Control
-GPIO27       ➜ Manual Button
-```
+### Bảng chân GPIO
 
-### GPIO Mapping
-
-- **GPIO12**: LED 1
-- **GPIO13**: LED 2
-- **GPIO14**: Nút bấm LED 1 (INPUT_PULLUP)
-- **GPIO16**: LD2410 RX
-- **GPIO17**: LD2410 TX
-- **GPIO21**: I2C SDA (BME280)
-- **GPIO22**: I2C SCL (BME280)
-- **GPIO27**: ~~Nút cảm ứng LED 2~~ (VÔ HIỆU HÓA)
-- **GPIO32**: Cảm biến mưa (ADC)
-
-### Cảm biến
-
-- **LD2410**: Cảm biến chuyển động mmWave
-- **BME280**: Nhiệt độ, áp suất, độ ẩm (I2C 0x76)
-- **Rain Sensor**: Cảm biến mưa analog
+| GPIO | Chức năng | Ghi chú |
+| --- | --- | --- |
+| GPIO12 | LED 1 (cực G MOSFET) | Chân strapping: tuyệt đối không gắn điện trở kéo lên, nếu không ESP32 không khởi động |
+| GPIO13 | LED 2 (cực G MOSFET) | |
+| GPIO14 | Button LED 1 | Nút nhấn nối GND, dùng điện trở kéo lên bên trong |
+| GPIO27 | Button LED 2 | Nút chạm, đọc mức thấp khi chạm |
+| GPIO16 | UART RX ← LD2410 TX | |
+| GPIO17 | UART TX → LD2410 RX | |
+| GPIO21 | I2C SDA (BME280) | |
+| GPIO22 | I2C SCL (BME280) | |
+| GPIO32 | Cảm biến mưa (ADC) | Điện áp tụt khi mặt cảm biến ướt |
 
 ## Bắt đầu nhanh
 
-### 1. Chuẩn bị môi trường
+### 1. Cài ESPHome
 
 ```bash
 pip install esphome
 ```
 
-### 2. Cấu hình WiFi
+Cấu hình cần ESPHome **2026.7.0 trở lên**.
+
+### 2. Tạo tệp secrets
 
 ```bash
 cp secrets.template.yaml secrets.yaml
-# Sửa thông tin WiFi trong secrets.yaml
 ```
 
-### 3. Compile & Flash
+Điền `wifi_ssid`, `wifi_password` và `ota_password`. `secrets.yaml` đã nằm trong `.gitignore`.
+
+### 3. Kiểm cấu hình rồi nạp
 
 ```bash
-# Windows
-flash.bat
-
-# Linux/MacOS
-esphome run main.yaml
+esphome config main.yaml   # chỉ kiểm cấu hình
+esphome run main.yaml      # biên dịch và nạp: lần đầu qua USB, về sau qua OTA
 ```
 
-### Biên dịch với cấu hình modular
+Trên Windows có sẵn các script: `setup.bat`, `compile.bat`, `flash.bat` và `logs.bat`.
+`flash.bat` và `logs.bat` trỏ tới `192.168.20.161`; đổi thành địa chỉ thiết bị của bạn.
 
-```bash
-esphome compile main.yaml
-esphome upload main.yaml
-```
+### 4. Kiểm nút bấm một lần
 
-Hoặc dùng script tiện lợi:
-
-```cmd
-build_modular.bat
-```
+Lúc không nhấn nút nào, `Button LED 1` và `Button LED 2` trong Home Assistant phải là **off**.
+Nếu một nút đang là **on**, đổi `button1_inverted` / `button2_inverted` tương ứng trong
+`main.yaml` thành `"false"` rồi nạp lại.
 
 ## Cấu hình
 
-Để sửa đổi:
+Tham số dùng chung nằm ở `substitutions` đầu tệp `main.yaml`:
 
-1. **Thay đổi cấu hình WiFi**: Sửa trong `components/common.yaml`
-2. **Điều chỉnh cảm biến**: Sửa trong `components/environment_sensors.yaml`
-3. **Thay đổi GPIO**: Sửa trong `components/led_controls.yaml`
-4. **Cập nhật logic motion**: Sửa trong `components/motion_sensor.yaml`
-5. **Điều chỉnh thời gian**: Sửa trong `components/time_automation.yaml`
+| Tham số | Mặc định | Ý nghĩa |
+| --- | --- | --- |
+| `led2_manual_timeout` | `5min` | Một thao tác tay với LED 2 tạm rời Auto trong bao lâu |
+| `ld2410_distance_interval` | `5s` | Khoảng cách ngắn nhất giữa hai lần gửi một khoảng cách LD2410 |
+| `button1_inverted`, `button2_inverted` | `"true"` | Cực tính nút (`"true"` = chân đọc mức thấp khi nhấn) |
+| `rain_on_below`, `rain_off_above` | `1.8`, `2.2` | Ngưỡng mưa tính bằng vôn (khoảng giữa là vùng trễ) |
+| `timezone` | `Asia/Ho_Chi_Minh` | Múi giờ dùng cho khung giờ LED 2 |
+
+Phần còn lại nằm ở module tương ứng:
+
+| Muốn đổi | Sửa tệp |
+| --- | --- |
+| WiFi, OTA | `main.yaml` và `secrets.yaml` |
+| BME280 và cảm biến mưa | `components/environment_sensors.yaml` |
+| LD2410 và tần suất gửi | `components/motion_sensor.yaml` |
+| Chân LED, nút bấm, logic LED 2 | `components/led_controls.yaml` |
+| Khung giờ mặc định, nguồn giờ | `components/time_automation.yaml` |
+| Thực thể chẩn đoán | `components/diagnostic.yaml` |
 
 ## Home Assistant
 
-Cần tạo các input_datetime helpers trong HA:
+Thiết bị dùng API gốc của ESPHome và được tự phát hiện. Không cần tạo helper hay automation
+nào bên Home Assistant.
 
-- `input_datetime.auto_led2_start`: Thời gian bắt đầu tự động
-- `input_datetime.auto_led2_end`: Thời gian kết thúc tự động
+| Thực thể | Loại | Công dụng |
+| --- | --- | --- |
+| `LED 1` | switch | Dải LED 1 |
+| `LED 2` | switch | Dải LED 2; bật/tắt ở đây là ghi đè tay |
+| `LED 2 Auto Mode` | switch | Cho phép LED 2 theo người |
+| `LD2410 Enable` | switch | Cho phép cảm biến hiện diện điều khiển LED 2 (tắt thì vẫn đo và báo về) |
+| `Start Hour`, `Start Minute`, `End Hour`, `End Minute` | number | Khung giờ Auto hằng ngày (mặc định 05:00–23:00) |
+| `Presence Detection`, `Moving Target`, `Still Target` | binary_sensor | Hiện diện từ LD2410 |
+| `Moving Distance`, `Still Distance`, `Detection Distance` | sensor | Khoảng cách LD2410 (cm), gửi khi đổi, tối đa 5 giây một lần |
+| `Temp`, `Pressure`, `Humidity` | sensor | BME280, mỗi 60 giây |
+| `Rain Sensor Value`, `Mưa?` | sensor, binary_sensor | Điện áp cảm biến mưa và trạng thái có mưa |
+| `Button LED 1`, `Button LED 2` | binary_sensor | Nút bấm vật lý |
+| `WiFi RSSI`, `RAM Free (KB)`, `WiFi IP`, `WiFi SSID`, `WiFi BSSID`, `WiFi MAC` | chẩn đoán | Sức khoẻ thiết bị |
+| `Restart thiết bị` | button | Khởi động lại ESP32 |
+
+**Tên thực thể là khoá định danh.** Home Assistant nhận diện mỗi thực thể theo `name:`, nên đổi
+tên trong YAML sẽ tạo thực thể mới và bỏ rơi thực thể cũ trong dashboard, automation.
+
+### LED 2 hoạt động thế nào
+
+- **Auto**: khi `LED 2 Auto Mode` và `LD2410 Enable` cùng bật và đang trong khung giờ, LED 2 theo
+  `Presence Detection`.
+- **Vào khung giờ**: Auto tự bật. Nếu đang ghi đè tay thì chờ lượt ghi đè đó chạy hết.
+  **Hết khung giờ**: Auto tự tắt, và nếu LED 2 đang sáng do Auto thì được tắt theo; đèn bạn bật
+  tay thì để yên.
+- **Ghi đè tay**: bật/tắt `LED 2` (từ Home Assistant hoặc chạm ngắn nút 2) làm Auto tắt 5 phút
+  rồi tự bật lại. Giữ nút 0,8–5 giây để về Auto ngay.
+- **Sau khi khởi động lại** trong khung giờ, Auto được bật lại ngay khi thiết bị có giờ. Khi chưa
+  có giờ, cảm biến chưa điều khiển đèn.
+- **Mất WiFi 10 phút** thì thiết bị khởi động lại, và cả hai đèn trở về trạng thái tắt.
+
+Chi tiết hơn: [`docs/LED2_MANUAL_OVERRIDE_GUIDE.md`](docs/LED2_MANUAL_OVERRIDE_GUIDE.md).
 
 ## Cấu trúc dự án
 
-Kiến trúc modular:
-
 ```
 esp32_led_temp_pressure/
-├── main.yaml                    # File cấu hình chính (MODULAR)
-├── components/                  # Thư mục chứa các module
-│   ├── common.yaml              # Cấu hình cơ bản (Logger, API, OTA, I2C)
-│   ├── motion_sensor.yaml       # Cảm biến chuyển động LD2410
-│   ├── led_controls.yaml        # Điều khiển LED và nút bấm
-│   ├── environment_sensors.yaml # Cảm biến môi trường (BME280, mưa)
-│   ├── wifi_monitoring.yaml     # WiFi cấu hình cơ bản
-│   ├── diagnostic.yaml          # 🆕 Chẩn đoán hệ thống tổng hợp
-│   └── time_automation.yaml     # Quản lý thời gian và tự động hóa
-├── backup/                      # 📁 Old files (không còn dùng)
-│   ├── esp32_led_temp_pressure.yaml # File gốc monolithic
-│   ├── flash.bat                # Script flash cũ
-│   ├── esare.bat                # Script erase cũ
-│   ├── log.bat                  # Script log cũ
-│   └── README_BACKUP.md         # Hướng dẫn backup
-├── build_modular.bat            # 🆕 Script build/upload mới
-├── validate_modular.py          # 🆕 Script validation
+├── main.yaml                      # Tham số chung, WiFi, OTA, danh sách module
+├── components/
+│   ├── common.yaml                # Bo mạch, logger, API, I2C, nút restart
+│   ├── environment_sensors.yaml   # BME280, cảm biến mưa
+│   ├── motion_sensor.yaml         # LD2410 và công tắc "LD2410 Enable"
+│   ├── led_controls.yaml          # Công tắc LED, nút bấm, logic LED 2
+│   ├── time_automation.yaml       # Nguồn giờ, khung giờ Auto
+│   └── diagnostic.yaml            # Chẩn đoán WiFi và bộ nhớ
+├── secrets.template.yaml          # Chép thành secrets.yaml rồi điền
+├── docs/LED2_MANUAL_OVERRIDE_GUIDE.md
+├── examples/README.md             # Vài đoạn cấu hình tối giản, chạy độc lập
+├── setup.bat, compile.bat, flash.bat, logs.bat
 ├── so_do_esp32_led_24v_mosfet.pdf # Sơ đồ mạch
-└── README.md                    # File này
+└── CHANGELOG.md
 ```
-
-### Mô tả các module
-
-#### 1. `common.yaml` - Cấu hình cơ bản
-
-- Cấu hình ESP32, WiFi, Logger
-- API, OTA, Web Server
-- I2C, Button restart
-- Interval kiểm tra WiFi
-
-#### 2. `motion_sensor.yaml` - Cảm biến chuyển động
-
-- Cấu hình LD2410 UART
-- Binary sensor phát hiện người
-- Logic tự động bật/tắt LED2 theo thời gian
-
-#### 3. `led_controls.yaml` - Điều khiển LED
-
-- 2 LED (GPIO12, GPIO13)
-- Chế độ tự động LED2
-- Nút bấm vật lý và cảm ứng
-- Logic xử lý các loại nhấn nút
-
-#### 4. `environment_sensors.yaml` - Cảm biến môi trường
-
-- BME280: nhiệt độ, áp suất, độ ẩm
-- Cảm biến mưa (ADC)
-- Binary sensor phát hiện mưa với ngưỡng
-
-#### 5. `wifi_monitoring.yaml` - Cấu hình WiFi cơ bản
-
-- Cấu hình WiFi fallback và captive portal
-- mDNS và network discovery settings
-
-#### 6. `diagnostic.yaml` - Chẩn đoán & Giám sát hệ thống
-
-- **WiFi Diagnostics**: RSSI, quality %, signal bars, connection info
-- **System Health**: Memory usage %, CPU load, temperature monitoring
-- **Uptime Tracking**: Seconds và human-readable format
-- **Alert Systems**: Low memory, high temp, poor WiFi warnings
-- **Health Scoring**: Overall system health assessment
-
-#### 7. `time_automation.yaml` - Tự động hóa theo thời gian
-
-- Đồng bộ thời gian với Home Assistant và SNTP
-- Tự động bật/tắt chế độ auto LED2 theo khung giờ
-- Quản lý các biến toàn cục thời gian
-
-### Ưu điểm cấu trúc modular
-
-1. **Dễ bảo trì**: Mỗi chức năng trong file riêng
-2. **Tái sử dụng**: Có thể dùng lại các module cho dự án khác
-3. **Debug dễ**: Dễ tìm và sửa lỗi trong từng module
-4. **Mở rộng**: Thêm tính năng mới không ảnh hưởng code cũ
-5. **Cộng tác**: Nhiều người có thể làm việc trên các module khác nhau
-6. **Version control**: Git tracking thay đổi từng module riêng biệt
 
 ## Phát triển
 
-### Backup & Restore
-
-- File gốc `esp32_led_temp_pressure.yaml` được giữ lại làm backup
-- Để khôi phục: copy nội dung file gốc vào `main.yaml`
-- Để cập nhật từ modular về monolithic: tổng hợp tất cả components vào 1 file
-
-Khôi phục file cũ (nếu cần):
-
-```cmd
-# Copy file gốc từ backup
-copy backup\esp32_led_temp_pressure.yaml .
-
-# Sử dụng scripts cũ
-backup\flash.bat
-backup\log.bat
-```
+- **Kiểm trước khi nạp**: `esphome config main.yaml`. CI chạy đúng lệnh này ở mỗi lần push, dùng
+  `secrets.template.yaml` thay cho secrets thật.
+- **Đọc log**: `esphome logs main.yaml --device <ip>`. Logger chạy ở mức `INFO`; đổi thành
+  `DEBUG` trong `components/common.yaml` để xem cấu hình từng linh kiện lúc khởi động.
+- **Tuỳ chọn khởi động, bật khi cần**: `components/common.yaml` có sẵn hai tuỳ chọn `esp32` đang
+  để dạng chú thích (`minimum_chip_revision`, `sram1_as_iram`) do chính thiết bị gợi ý trong log
+  khởi động. Chúng thay đổi cách firmware khởi động, nên chỉ bật khi đang cầm bo mạch và có cáp USB.
+- **Biên dịch trên Windows**: ESPHome từ 2026.10 biên dịch bằng bộ công cụ ESP-IDF riêng. Bộ này
+  cần Windows bật long path, hoặc đặt `ESPHOME_ESP_IDF_PREFIX` tới một thư mục ngắn như
+  `C:\ESPHome\idf`, và trình cài của nó từ chối chạy trong Git Bash; hãy dùng `cmd.exe` hoặc
+  PowerShell (các script `.bat` vốn đã chạy như vậy). `esphome config` không bị ảnh hưởng.
+- **Lịch sử thay đổi**: xem [`CHANGELOG.md`](CHANGELOG.md).
 
 <!-- support:start -->
 ## Ủng hộ dự án

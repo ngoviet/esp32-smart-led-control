@@ -1,51 +1,36 @@
 # ===========================================
-# CẤU HÌNH CƠ BẢN - COMMON CONFIGURATION  
+# CẤU HÌNH CƠ BẢN - COMMON CONFIGURATION
 # ===========================================
 
 esphome:
-  name: led_temp_pressure
-  # platformio_options:
-  #   board_build.f_cpu: 160000000L   # giữ mặc định, tránh OC gây treo Wi-Fi
+  name: ${device_name}
+  min_version: 2026.7.0
 
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
+    # Hai tuỳ chọn dưới đây do chính thiết bị gợi ý trong log khởi động
+    # (chip ESP32 rev 3.1, bootloader hỗ trợ SRAM1 làm IRAM). Chúng thay đổi
+    # cách firmware khởi động, nên chỉ bật khi đang cầm thiết bị và có cáp USB
+    # để nạp lại nếu không lên:
+    # advanced:
+    #   minimum_chip_revision: "3.1"   # firmware nhỏ hơn, KHÔNG chạy trên chip rev cũ
+    #   sram1_as_iram: true            # thêm khoảng 40 KB IRAM
 
-web_server:
-  port: 80
-
-# WiFi configuration moved to main.yaml for security
-# See main.yaml and secrets.yaml for WiFi settings
-
+# INFO là mức thiết bị đang chạy. Cần xem cấu hình từng linh kiện lúc khởi
+# động (dump_config) thì tạm đổi thành DEBUG.
 logger:
-  baud_rate: 115200
-  level: DEBUG
+  level: INFO
 
 api:
-  reboot_timeout: 0s                    # đứt API tạm thời không bị ép reboot
-  
-# OTA configuration moved to main.yaml for security
-# See main.yaml and secrets.yaml for OTA password
+  # Mất kết nối Home Assistant không ép khởi động lại: đèn vẫn tự chạy.
+  reboot_timeout: 0s
 
 i2c:
   sda: GPIO21
   scl: GPIO22
-  scan: true
 
-# Nút restart thủ công (tiện khi HA vẫn còn API)
 button:
   - platform: restart
-    id: restart_button
     name: "Restart thiết bị"
-
-# Tự phục hồi nếu Wi-Fi xuống kéo dài (bổ sung ngoài reboot_timeout)
-interval:
-  - interval: 2min
-    then:
-      - if:
-          condition: wifi.connected
-          then: []
-          else:
-            - logger.log: "WiFi down >2min → restarting device…"
-            - button.press: restart_button

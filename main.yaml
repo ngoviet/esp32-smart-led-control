@@ -1,36 +1,54 @@
 # ===============================================
-# ESP32 LED TEMPERATURE PRESSURE - MAIN CONFIG
+# ESP32 LED + CẢM BIẾN MÔI TRƯỜNG - TỆP CHÍNH
 # ===============================================
-# Dự án: Điều khiển LED tự động với cảm biến môi trường
-# Tác giả: [Your Name]
-# Ngày tạo: October 6, 2025
-# Cấu trúc modular để dễ bảo trì
+# Thiết bị: led_temp_pressure (ESP32-WROOM-32, 192.168.20.161)
+# Mỗi tệp trong components/ lo một nhóm chức năng; tệp này chỉ giữ tham số
+# dùng chung, WiFi, OTA và danh sách module.
+#
+# QUAN TRỌNG: `name:` của mỗi thực thể là khoá định danh bên Home Assistant.
+# Đổi tên một thực thể = HA tạo thực thể mới và dashboard/automation cũ mất dấu.
 # ===============================================
 
-# Security: Load sensitive information from secrets.yaml
-# File secrets.yaml chứa thông tin WiFi và passwords (không upload git)
+substitutions:
+  device_name: led_temp_pressure
+  timezone: Asia/Ho_Chi_Minh
 
-# WiFi Configuration (from secrets file)
+  # Bật/tắt LED 2 bằng tay thì tạm rời chế độ Auto trong bao lâu.
+  led2_manual_timeout: 5min
+
+  # Ba khoảng cách của LD2410 gửi về Home Assistant thưa nhất là bao lâu một lần.
+  ld2410_distance_interval: 5s
+
+  # Cực tính nút bấm. Nút 1 nối GPIO14 xuống GND (theo sơ đồ mạch); nút 2
+  # được suy ra từ lịch sử Home Assistant của firmware cũ (đọc mức thấp khi
+  # chạm). Cả hai vì vậy được đảo để "đang nhấn" = ON.
+  # Kiểm sau khi nạp: lúc KHÔNG nhấn, thực thể "Button LED 1/2" trong Home
+  # Assistant phải là off. Nếu là on thì đổi giá trị tương ứng thành "false".
+  button1_inverted: "true"
+  button2_inverted: "true"
+
+  # Cảm biến mưa: điện áp tụt khi mặt cảm biến ướt. Hai ngưỡng tạo vùng trễ.
+  rain_on_below: "1.8"
+  rain_off_above: "2.2"
+
 wifi:
   networks:
     - ssid: !secret wifi_ssid
       password: !secret wifi_password
   fast_connect: true
   power_save_mode: none
+  # Mất WiFi 10 phút mới khởi động lại. Không tự khởi động lại sớm hơn, vì
+  # nút bấm và đèn vẫn chạy được khi không có mạng.
   reboot_timeout: 10min
 
-# OTA Configuration (password from secrets)  
 ota:
   - platform: esphome
     password: !secret ota_password
 
-# Import các module components
 packages:
   common: !include components/common.yaml
-  motion_sensor: !include components/motion_sensor.yaml  
-  led_controls: !include components/led_controls.yaml
   environment_sensors: !include components/environment_sensors.yaml
-  wifi_basic: !include components/wifi_monitoring.yaml
-  diagnostic: !include components/diagnostic.yaml
+  motion_sensor: !include components/motion_sensor.yaml
+  led_controls: !include components/led_controls.yaml
   time_automation: !include components/time_automation.yaml
-  led2_scripts: !include components/led2_scripts.yaml
+  diagnostic: !include components/diagnostic.yaml

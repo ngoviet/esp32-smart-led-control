@@ -1,9 +1,11 @@
 # ===================================================
-# ENVIRONMENT SENSORS - CẢM BIẾN MÔI TRƯỜNG 
+# ENVIRONMENT SENSORS - CẢM BIẾN MÔI TRƯỜNG
 # ===================================================
 
 sensor:
   - platform: bme280_i2c
+    address: 0x76
+    update_interval: 60s
     temperature:
       name: "Temp"
       oversampling: 16x
@@ -13,26 +15,32 @@ sensor:
     humidity:
       name: "Humidity"
       oversampling: 16x
-    address: 0x76
-    update_interval: 5s
 
+  # Đo mỗi 10 giây nhưng chỉ gửi trung bình 6 mẫu (mỗi phút một giá trị):
+  # bớt nhiễu ADC mà không làm đầy cơ sở dữ liệu Home Assistant.
   - platform: adc
-    pin: 32
+    pin: GPIO32
     name: "Rain Sensor Value"
     id: rain_sensor_adc
     attenuation: auto
-    update_interval: 5s
+    update_interval: 10s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 6
+          send_every: 6
+          send_first_at: 1
 
 binary_sensor:
   - platform: template
     name: "Mưa?"
     id: rain_detected
-    lambda: |-
-      static float threshold_on = 1.8;
-      static float threshold_off = 2.2;
-      static bool raining = false;
-      float value = id(rain_sensor_adc).state;
-      if (!raining && value < threshold_on) raining = true;
-      if (raining && value > threshold_off) raining = false;
-      return raining;
     device_class: moisture
+    lambda: |-
+      // Ướt -> điện áp tụt. Bật khi dưới ngưỡng thấp, chỉ tắt khi vượt ngưỡng
+      // cao, nên giá trị lơ lửng giữa hai ngưỡng không làm nhấp nháy.
+      static bool raining = false;
+      const float volts = id(rain_sensor_adc).state;
+      if (std::isnan(volts)) return raining;
+      if (volts < ${rain_on_below}) raining = true;
+      else if (volts > ${rain_off_above}) raining = false;
+      return raining;

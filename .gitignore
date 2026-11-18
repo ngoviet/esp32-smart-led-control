@@ -39,3 +39,5 @@ __pycache__/
 .codegraph/
 .repowise/
 .mcp.json
+.folio/
+.design-kit/
